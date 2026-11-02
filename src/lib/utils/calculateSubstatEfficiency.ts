@@ -1,0 +1,78 @@
+import type { Player } from '$lib/gearBuilder/playerClasses';
+import { evaluate, parse, OperatorNode } from 'mathjs';
+
+function evaluateExpression(expr: string, scope: Record<string, string>): number {
+	try {
+		return evaluate(expr, scope);
+	} catch (error) {
+		return NaN;
+	}
+}
+
+export function evaluateValue(key: string, values: Record<string, string>): number {
+	let stat = 1;
+	if (key in values) {
+		stat = evaluateExpression(values[key], values);
+	}
+	return stat;
+}
+
+export function evaluateStat(key: string, values: Record<string, string>): number {
+	let stack: string[] = [key];
+	let ended = false;
+	while (stack.length > 0) {
+		let current: string = stack[stack.length - 1];
+		let parsed = parse(values[current]) as OperatorNode;
+
+		if ('args' in parsed && !ended) {
+			for (let arg of parsed.args) {
+				if ('name' in arg) {
+					if (stack.includes(arg.name as string) && arg.name != current) {
+						return NaN;
+					} else {
+						stack.push(arg.name as string);
+					}
+				}
+			}
+		}
+
+		if ('name' in parsed) {
+			return NaN;
+		}
+		if (current == stack[stack.length - 1]) {
+			values[current] = evaluateValue(current, values).toString();
+			stack.pop();
+			ended = true;
+		}
+	}
+
+	return evaluateValue(key, values);
+}
+
+export function calculateSubstatEfficiency(statKey: string, values: Record<string, string>) {
+	let percentCalc: number = evaluateStat(statKey, values);
+
+	/*
+	const percentCalcOld =
+		multiplier *
+		1.35 *
+		((16 * Math.pow(Math.log(0.1 * statAmount + 4), 3) * 0.09 + 0.15 * statAmount) /
+			(0.1 + 0.15 * Math.pow(playerLevel, 0.5)) -
+			0.79);
+	*/
+
+	return Math.round((percentCalc + Number.EPSILON) * 100) / 100;
+}
+
+export function calculateBaseline(
+	statAmount: number,
+	player: Player,
+	formulas: Record<string, Record<string, string>>
+) {
+	let percentCalc = evaluateExpression(formulas.baseline.value.toString(), {
+		statAmount: statAmount,
+		playerLevel: player.level
+	});
+	percentCalc *= statAmount / Math.abs(statAmount);
+	return percentCalc;
+}
